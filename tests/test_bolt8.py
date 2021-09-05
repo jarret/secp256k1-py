@@ -100,6 +100,9 @@ class PrivateKey(object):
     def to_bytes(self):
         return self.rawkey
 
+    def to_hex(self):
+        return self.to_bytes().hex()
+
     def public_key(self):
         return PublicKey(self.key.public_key)
 
@@ -112,6 +115,11 @@ class PrivateKey(object):
     @staticmethod
     def new_ephemeral():
         return PrivateKey(os.urandom(32))
+
+    @staticmethod
+    def from_hex(hex_str):
+        assert len(hex_str) == 64
+        return PrivateKey(bytes.fromhex(hex_str))
 
 
 class PublicKey(object):
@@ -132,6 +140,9 @@ class PublicKey(object):
     def to_bytes(self) -> bytes:
         return self.key.format(compressed=True)
 
+    def to_hex(self):
+        return self.to_bytes().hex()
+
     def __str__(self):
         return "PublicKey[0x{}]".format(self.to_bytes().hex())
 
@@ -142,7 +153,7 @@ class PublicKey(object):
 
 class Bolt8Handshake():
     def __init__(self, local_privkey):
-        assert responder_pubkey is not None, "set responder_pubkey in subclass"
+        assert self.responder_pubkey is not None
         self.chaining_key = None
         self.handshake_hash = None
         self.local_privkey = local_privkey
@@ -322,33 +333,93 @@ class Bolt8Responder(Bolt8Handshake):
 
 ###############################################################################
 
-if __name__ == "__main__":
-    initiator_privkey = PrivateKey(os.urandom(32))
-    initiator_pubkey = initiator_privkey.public_key()
-    print("initiator_privkey: %s" % initiator_privkey.to_bytes().hex())
-    print("initiator_pubkey:  %s" % initiator_pubkey.to_bytes().hex())
-    responder_privkey = PrivateKey(os.urandom(32))
-    responder_pubkey = responder_privkey.public_key()
-    print("responder_privkey: %s" % responder_privkey.to_bytes().hex())
-    print("responder_pubkey:  %s" % responder_pubkey.to_bytes().hex())
-    initiator = Bolt8Initiator(responder_pubkey, initiator_privkey)
-    responder = Bolt8Responder(responder_privkey)
+def test_handshake():
+    rs_priv = PrivateKey.from_hex(
+        '2121212121212121212121212121212121212121212121212121212121212121')
+    rs_pub = rs_priv.public_key()
+    assert (rs_pub.to_hex() ==
+        '028d7500dd4c12685d1f568b4c2b5048e8534b873319f3a8daa612b469132ec7f7')
+
+    ls_priv = PrivateKey.from_hex(
+        '1111111111111111111111111111111111111111111111111111111111111111')
+    ls_pub = ls_priv.public_key()
+    assert (ls_pub.to_hex() ==
+        '034f355bdcb7cc0af728ef3cceb9615d90684bb5b2ca5f859ab0f0b704075871aa')
+
+    initiator = Bolt8Initiator(rs_pub, ls_priv)
+    # override random ephemeral key
+    initiator.handshake['e'] = PrivateKey.from_hex(
+        '1212121212121212121212121212121212121212121212121212121212121212')
+    assert (initiator.handshake['e'].public_key().to_hex() ==
+        '036360e856310ce5d294e8be33fc807077dc56ac80d95d9cd4ddbd21325eff73f7')
+
+    responder = Bolt8Responder(rs_priv)
+    # override random ephemeral key
+    responder.handshake['e'] = PrivateKey.from_hex(
+        '2222222222222222222222222222222222222222222222222222222222222222')
+    assert (responder.handshake['e'].public_key().to_hex() ==
+        '02466d7fcae563e5cb09a0d1870bb580344804617879a14949cf22285f1bae3f27')
+
+
+    assert (initiator.handshake['h'].hex() ==
+        '8401b3fdcaaa710b5405400536a3d5fd7792fe8e7fe29cd8b687216fe323ecbd')
+    assert initiator.handshake['h'] == responder.handshake['h']
+
+    # act one
     act_one_msg = initiator.act_one_msg()
-    assert len(act_one_msg) == 50
-    print("act one handshake msg: %s" % act_one_msg.hex())
+    assert (act_one_msg.hex() ==
+        '00036360e856310ce5d294e8be33fc807077dc56ac80d95d9cd4ddbd21325eff73f7'
+        '0df6086551151f58b8afe6c195782c6a')
+
     responder.act_one_ingest(act_one_msg)
+    assert (initiator.handshake['h'].hex() ==
+           '9d1ffbb639e7e20021d9259491dc7b160aab270fb1339ef135053f6f2cebe9ce')
+    assert (initiator.handshake['h'] == responder.handshake['h'])
+
+    assert (initiator.chaining_key.hex() ==
+        'b61ec1191326fa240decc9564369dbb3ae2b34341d1e11ad64ed89f89180582f')
+    assert (responder.chaining_key.hex() ==
+        'b61ec1191326fa240decc9564369dbb3ae2b34341d1e11ad64ed89f89180582f')
+
+    # act two
     act_two_msg = responder.act_two_msg()
-    assert len(act_two_msg) == 50
-    print("act two handshake msg: %s" % act_two_msg.hex())
+    assert (act_two_msg.hex() ==
+        '0002466d7fcae563e5cb09a0d1870bb580344804617879a14949cf22285f1bae3f27'
+        '6e2470b93aac583c9ef6eafca3f730ae')
+    assert (responder.handshake['h'].hex() ==
+       '90578e247e98674e661013da3c5c1ca6a8c8f48c90b485c0dfa1494e23d56d72')
+
+
     initiator.act_two_ingest(act_two_msg)
+    assert (initiator.handshake['h'].hex() ==
+        '90578e247e98674e661013da3c5c1ca6a8c8f48c90b485c0dfa1494e23d56d72')
+
+    assert (initiator.chaining_key.hex() ==
+        'e89d31033a1b6bf68c07d22e08ea4d7884646c4b60a9528598ccb4ee2c8f56ba')
+    assert (responder.chaining_key.hex() ==
+        'e89d31033a1b6bf68c07d22e08ea4d7884646c4b60a9528598ccb4ee2c8f56ba')
+
+    # act three
     act_three_msg = initiator.act_three_msg()
-    assert len(act_three_msg) == 66
-    print("act handshake three msg: %s" % act_three_msg.hex())
+    assert (act_three_msg.hex() ==
+        '00b9e3a702e93e3a9948c2ed6e5fd7590a6e1c3a0344cfc9d5b57357049aa2235536'
+        '1aa02e55a8fc28fef5bd6d71ad0c38228dc68b1c466263b47fdf31e560e139ba')
+    assert (initiator.sk.hex() ==
+        '969ab31b4d288cedf6218839b27a3e2140827047f2c0f01bf5c04435d43511a9')
+    assert (initiator.rk.hex() ==
+        'bb9020b8965f4df047e07f955f3c4b88418984aadc5cdb35096b9ea8fa5c3442')
     responder.act_three_ingest(act_three_msg)
-    msg1_send = b'deadbeef'
-    print("sending: %s" % msg1_send.hex())
-    ciphertext = initiator.noiseify(msg1_send)
-    print("ciphertext: %s" % ciphertext.hex())
-    msg1_recv = responder.denoiseify(ciphertext)
-    print("recvd: %s" % msg1_recv.hex())
-    assert msg1_send == msg1_recv
+
+    # final state
+    assert (initiator.rk == responder.sk)
+    assert (initiator.sk == responder.rk)
+    assert (initiator.sn == responder.rn)
+    assert (initiator.rn == responder.sn)
+    assert (responder.rk.hex() ==
+        '969ab31b4d288cedf6218839b27a3e2140827047f2c0f01bf5c04435d43511a9')
+    assert (responder.sk.hex() ==
+        'bb9020b8965f4df047e07f955f3c4b88418984aadc5cdb35096b9ea8fa5c3442')
+
+    assert (initiator.chaining_key == responder.chaining_key)
+    assert (initiator.chaining_key.hex() ==
+        '919219dbb2920afa8db80f9a51787a840bcf111ed8d588caf9ab4be716e42b01')
