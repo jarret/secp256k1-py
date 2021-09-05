@@ -423,3 +423,67 @@ def test_handshake():
     assert (initiator.chaining_key == responder.chaining_key)
     assert (initiator.chaining_key.hex() ==
         '919219dbb2920afa8db80f9a51787a840bcf111ed8d588caf9ab4be716e42b01')
+
+
+def test_read_key_rotation():
+    ls_priv = PrivateKey.from_hex(
+        '1111111111111111111111111111111111111111111111111111111111111111')
+    rs_priv = PrivateKey.from_hex(
+        '2121212121212121212121212121212121212121212121212121212121212121')
+    rs_pub = rs_priv.public_key()
+
+    initiator = Bolt8Initiator(rs_pub, ls_priv)
+    # fake the handshake completed by just setting the values
+    # ck=0x919219dbb2920afa8db80f9a51787a840bcf111ed8d588caf9ab4be716e42b01
+    # sk=0x969ab31b4d288cedf6218839b27a3e2140827047f2c0f01bf5c04435d43511a9
+    # rk=0xbb9020b8965f4df047e07f955f3c4b88418984aadc5cdb35096b9ea8fa5c3442
+    initiator.chaining_key = bytes.fromhex(
+        '919219dbb2920afa8db80f9a51787a840bcf111ed8d588caf9ab4be716e42b01')
+    initiator.sk = bytes.fromhex(
+        '969ab31b4d288cedf6218839b27a3e2140827047f2c0f01bf5c04435d43511a9')
+    initiator.rk = bytes.fromhex(
+        'bb9020b8965f4df047e07f955f3c4b88418984aadc5cdb35096b9ea8fa5c3442')
+    initiator.sn, initiator.rn = 0, 0
+    initiator.sck = initiator.chaining_key
+    initiator.rck = initiator.chaining_key
+    initiator.handshake_finished = True
+
+    msg = bytes.fromhex('68656c6c6f')
+    noise_msg = initiator.noiseify(msg)
+    assert (noise_msg.hex() ==
+        'cf2b30ddf0cf3f80e7c35a6e6730b59fe802473180f396d88a8fb0db8cbcf25d2f214'
+        'cf9ea1d95')
+
+    # Send 498 more messages, to get just below the switch threshold
+    for i in range(0, 498):
+        noise_msg = initiator.noiseify(msg)
+    # Check the last send key against the test vector
+    assert (initiator.sk.hex() ==
+        '969ab31b4d288cedf6218839b27a3e2140827047f2c0f01bf5c04435d43511a9')
+
+    # This next message triggers the rotation:
+    noise_msg = initiator.noiseify(msg)
+
+    # Now try to send with the new keys:
+    noise_msg = initiator.noiseify(msg)
+    assert (noise_msg.hex() ==
+        '178cb9d7387190fa34db9c2d50027d21793c9bc2d40b1e14dcf30ebeeeb220f48364f'
+        '7a4c68bf8')
+
+    noise_msg = initiator.noiseify(msg)
+    assert (noise_msg.hex() ==
+        '1b186c57d44eb6de4c057c49940d79bb838a145cb528d6e8fd26dbe50a60ca2c104b5'
+        '6b60e45bd')
+
+    for i in range(0, 498):
+        noise_msg = initiator.noiseify(msg)
+
+    noise_msg = initiator.noiseify(msg)
+    assert (noise_msg.hex() ==
+           '4a2f3cc3b5e78ddb83dcb426d9863d9d9a723b0337c89dd0b005d89f8d3c05c52b'
+           '76b29b740f09')
+
+    noise_msg = initiator.noiseify(msg)
+    assert (noise_msg.hex() ==
+        '2ecd8c8a5629d0d02ab457a0fdd0f7b90a192cd46be5ecb6ca570bfc5e268338b1a16'
+        'cf4ef2d36')
