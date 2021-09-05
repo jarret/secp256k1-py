@@ -7,7 +7,6 @@ from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from hashlib import sha256
 import os
 import coincurve
-import struct
 
 #############################################################################
 # cosmetically different, but nitty gritty borrowed from:
@@ -80,7 +79,7 @@ def nonce(n):
     value. Note: this follows the Noise Protocol convention, rather than
     our normal endian.
     """
-    return b'\x00' * 4 + struct.pack("<Q", n)
+    return b'\x00' * 4 + n.to_bytes(8, byteorder="little")
 
 #############################################################################
 # coincurve-depends stuff
@@ -186,7 +185,7 @@ class Bolt8Handshake():
                 "Short read reading the message length: 18 != {}".format(
                     len(lc)))
         length = decryptWithAD(self.rk, nonce(self.rn), b'', lc)
-        length, = struct.unpack("!H", length)
+        length = length.frombytes(length, bytesorder='big')
         self.rn += 1
         mc = msg[18:][:length + 16]
         if len(mc) < length + 16:
@@ -201,7 +200,7 @@ class Bolt8Handshake():
 
     def noiseify(self, msg):
         assert self.handshake_finished
-        length = struct.pack("!H", len(msg))
+        length = len(msg).to_bytes(2, byteorder="big")
         lc = encryptWithAD(self.sk, nonce(self.sn), b'', length)
         mc = encryptWithAD(self.sk, nonce(self.sn + 1), b'', msg)
         self.sn += 2
