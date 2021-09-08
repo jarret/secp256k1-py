@@ -17,24 +17,6 @@ import coincurve
 # crypto utlities
 #############################################################################
 
-class Sha256Mixer(object):
-    def __init__(self, base):
-        self.hash = sha256(base).digest()
-
-    def update(self, data):
-        h = sha256(self.hash)
-        h.update(data)
-        self.hash = h.digest()
-        return self.hash
-
-    def digest(self):
-        return self.hash
-
-    def __str__(self):
-        return "Sha256Mixer[0x{}]".format(self.hash.hex())
-
-#############################################################################
-
 def hkdf(ikm, salt=b"", info=b""):
     hkdf = HKDF(
         algorithm=hashes.SHA256(),
@@ -205,15 +187,16 @@ class Bolt8Initiator(Bolt8Handshake):
         super().__init__(privkey)
 
     def act_one_msg(self):
-        h = Sha256Mixer(b'')
-        h.hash = self.handshake['h']
+        h = sha256(self.handshake['h'])
         h.update(self.handshake['e'].public_key().to_bytes())
         es = self.handshake['e'].ecdh(self.responder_pubkey)
         t = hkdf(salt=self.chaining_key, ikm=es, info=b'')
         assert(len(t) == 64)
         self.chaining_key, temp_k1 = t[:32], t[32:]
         c = encryptWithAD(temp_k1, nonce(0), h.digest(), b'')
-        self.handshake['h'] = h.update(c)
+        h = sha256(h.digest())
+        h.update(c)
+        self.handshake['h'] = h.digest()
         pk = self.handshake['e'].public_key().to_bytes()
         m = b'\x00' + pk + c
         return m
@@ -224,8 +207,7 @@ class Bolt8Initiator(Bolt8Handshake):
             raise ValueError("Unsupported handshake version {}, only version "
                              "0 is supported.".format(v))
         self.re = re
-        h = Sha256Mixer(b'')
-        h.hash = self.handshake['h']
+        h = sha256(self.handshake['h'])
         h.update(re.to_bytes())
         ee = self.handshake['e'].ecdh(re)
         self.chaining_key, self.temp_k2 = hkdf_two_keys(
@@ -234,14 +216,14 @@ class Bolt8Initiator(Bolt8Handshake):
             decryptWithAD(self.temp_k2, nonce(0), h.digest(), c)
         except InvalidTag:
             ValueError("Verification of tag failed.")
+        h = sha256(h.digest())
         h.update(c)
         self.handshake['h'] = h.digest()
 
     def act_three_msg(self):
-        h = Sha256Mixer(b'')
-        h.hash = self.handshake['h']
         pk = self.local_pubkey.to_bytes()
-        c = encryptWithAD(self.temp_k2, nonce(1), h.digest(), pk)
+        c = encryptWithAD(self.temp_k2, nonce(1), self.handshake['h'], pk)
+        h = sha256(self.handshake['h'])
         h.update(c)
         se = self.local_privkey.ecdh(self.re)
         self.chaining_key, self.temp_k3 = hkdf_two_keys(
@@ -265,8 +247,7 @@ class Bolt8Responder(Bolt8Handshake):
         if v != 0:
             raise ValueError("Unsupported handshake version {}, only version "
                              "0 is supported.".format(v))
-        h = Sha256Mixer(b'')
-        h.hash = self.handshake['h']
+        h = sha256(self.handshake['h'])
         h.update(re.to_bytes())
         es = self.local_privkey.ecdh(re)
         self.handshake['re'] = re
@@ -277,18 +258,19 @@ class Bolt8Responder(Bolt8Handshake):
         except InvalidTag:
             ValueError("Verification of tag failed, remote peer doesn't know "
                        "our node ID.")
+        h = sha256(h.digest())
         h.update(c)
         self.handshake['h'] = h.digest()
 
     def act_two_msg(self):
-        h = Sha256Mixer(b'')
-        h.hash = self.handshake['h']
+        h = sha256(self.handshake['h'])
         h.update(self.handshake['e'].public_key().to_bytes())
         ee = self.handshake['e'].ecdh(self.handshake['re'])
         t = hkdf(salt=self.chaining_key, ikm=ee, info=b'')
         assert(len(t) == 64)
         self.chaining_key, self.temp_k2 = t[:32], t[32:]
         c = encryptWithAD(self.temp_k2, nonce(0), h.digest(), b'')
+        h = sha256(h.digest())
         h.update(c)
         self.handshake['h'] = h.digest()
         pk = self.handshake['e'].public_key().to_bytes()
@@ -296,14 +278,13 @@ class Bolt8Responder(Bolt8Handshake):
         return m
 
     def act_three_ingest(self, m):
-        h = Sha256Mixer(b'')
-        h.hash = self.handshake['h']
         v, c, t = m[0], m[1:50], m[50:]
         if v != 0:
             raise ValueError("Unsupported handshake version {}, only version "
                              "0 is supported.".format(v))
-        rs = decryptWithAD(self.temp_k2, nonce(1), h.digest(), c)
+        rs = decryptWithAD(self.temp_k2, nonce(1), self.handshake['h'], c)
         self.remote_pubkey = PublicKey(rs)
+        h = sha256(self.handshake['h'])
         h.update(c)
         se = self.handshake['e'].ecdh(self.remote_pubkey)
         self.chaining_key, self.temp_k3 = hkdf_two_keys(se, self.chaining_key)
