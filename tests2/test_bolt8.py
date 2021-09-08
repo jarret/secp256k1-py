@@ -1,10 +1,12 @@
-from coincurve_keys import PrivateKey, PublicKey
+from coincurve_keys import PrivateKey as CcPrivateKey
+from coincurve_keys import PublicKey as CcPublicKey
+from secp256k1_keys import PrivateKey as Secp256k1PrivateKey
+from secp256k1_keys import PublicKey as Secp256k1PublicKey
 from bolt8 import Bolt8Initiator, Bolt8Responder
 
 ###############################################################################
 
 def do_handshake(pubclass, privclass):
-    print("1")
     Bolt8Initiator.PUBLIC_KEY_CLASS = pubclass
     Bolt8Initiator.PRIVATE_KEY_CLASS = privclass
     Bolt8Responder.PUBLIC_KEY_CLASS = pubclass
@@ -101,7 +103,8 @@ def do_handshake(pubclass, privclass):
         '919219dbb2920afa8db80f9a51787a840bcf111ed8d588caf9ab4be716e42b01')
 
 def test_handshake():
-    classes = [(PublicKey, PrivateKey)]
+    classes = [(CcPublicKey, CcPrivateKey),
+               (Secp256k1PublicKey, Secp256k1PrivateKey)]
     for pubclass, privclass in classes:
         do_handshake(pubclass, privclass)
 
@@ -178,6 +181,7 @@ def do_read_key_rotation(pubclass, privclass):
         'cf4ef2d36')
 
 def test_read_key_rotation():
-    classes = [(PublicKey, PrivateKey)]
+    classes = [(CcPublicKey,  CcPrivateKey),
+               (Secp256k1PublicKey, Secp256k1PrivateKey)]
     for pubclass, privclass in classes:
         do_read_key_rotation(pubclass, privclass)
