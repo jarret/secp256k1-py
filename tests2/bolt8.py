@@ -14,6 +14,8 @@ from coincurve_keys import PublicKey
 #############################################################################
 
 class Bolt8Handshake():
+    PUBLIC_KEY_CLASS = PublicKey
+    PRIVATE_KEY_CLASS = PrivateKey
     def __init__(self, local_privkey):
         assert self.responder_pubkey is not None
         self.chaining_key = None
@@ -65,7 +67,7 @@ class Bolt8Handshake():
         h = sha256(h + b'lightning').digest()
         h = sha256(h + self.responder_pubkey.to_bytes()).digest()
         self.handshake = {'h': h,
-                          'e': PrivateKey.new_ephemeral()}
+                          'e': self.PRIVATE_KEY_CLASS.new_ephemeral()}
 
     def _maybe_rotate_keys(self):
         if self.sn == 1000:
@@ -146,7 +148,7 @@ class Bolt8Initiator(Bolt8Handshake):
         return m
 
     def act_two_ingest(self, m):
-        v, re, c = m[0], PublicKey(m[1:34]), m[34:]
+        v, re, c = m[0], self.PUBLIC_KEY_CLASS(m[1:34]), m[34:]
         if v != 0:
             raise ValueError("Unsupported handshake version {}, only version "
                              "0 is supported.".format(v))
@@ -191,7 +193,7 @@ class Bolt8Responder(Bolt8Handshake):
         super().__init__(privkey)
 
     def act_one_ingest(self, m):
-        v, re, c = m[0], PublicKey(m[1:34]), m[34:]
+        v, re, c = m[0], self.PUBLIC_KEY_CLASS(m[1:34]), m[34:]
         if v != 0:
             raise ValueError("Unsupported handshake version {}, only version "
                              "0 is supported.".format(v))
@@ -234,7 +236,7 @@ class Bolt8Responder(Bolt8Handshake):
                              "0 is supported.".format(v))
         rs = Bolt8Handshake.decryptWithAD(self.temp_k2, Bolt8Handshake.nonce(1),
                                           self.handshake['h'], c)
-        self.remote_pubkey = PublicKey(rs)
+        self.remote_pubkey = self.PUBLIC_KEY_CLASS(rs)
         h = sha256(self.handshake['h'])
         h.update(c)
         se = self.handshake['e'].ecdh(self.remote_pubkey)

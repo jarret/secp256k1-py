@@ -1,16 +1,22 @@
-from coincurve_keys import PrivateKey
+from coincurve_keys import PrivateKey, PublicKey
 from bolt8 import Bolt8Initiator, Bolt8Responder
 
 ###############################################################################
 
-def test_handshake():
-    rs_priv = PrivateKey.from_hex(
+def do_handshake(pubclass, privclass):
+    print("1")
+    Bolt8Initiator.PUBLIC_KEY_CLASS = pubclass
+    Bolt8Initiator.PRIVATE_KEY_CLASS = privclass
+    Bolt8Responder.PUBLIC_KEY_CLASS = pubclass
+    Bolt8Responder.PRIVATE_KEY_CLASS = privclass
+
+    rs_priv = privclass.from_hex(
         '2121212121212121212121212121212121212121212121212121212121212121')
     rs_pub = rs_priv.public_key()
     assert (rs_pub.to_hex() ==
         '028d7500dd4c12685d1f568b4c2b5048e8534b873319f3a8daa612b469132ec7f7')
 
-    ls_priv = PrivateKey.from_hex(
+    ls_priv = privclass.from_hex(
         '1111111111111111111111111111111111111111111111111111111111111111')
     ls_pub = ls_priv.public_key()
     assert (ls_pub.to_hex() ==
@@ -18,14 +24,14 @@ def test_handshake():
 
     initiator = Bolt8Initiator(rs_pub, ls_priv)
     # override random ephemeral key
-    initiator.handshake['e'] = PrivateKey.from_hex(
+    initiator.handshake['e'] = privclass.from_hex(
         '1212121212121212121212121212121212121212121212121212121212121212')
     assert (initiator.handshake['e'].public_key().to_hex() ==
         '036360e856310ce5d294e8be33fc807077dc56ac80d95d9cd4ddbd21325eff73f7')
 
     responder = Bolt8Responder(rs_priv)
     # override random ephemeral key
-    responder.handshake['e'] = PrivateKey.from_hex(
+    responder.handshake['e'] = privclass.from_hex(
         '2222222222222222222222222222222222222222222222222222222222222222')
     assert (responder.handshake['e'].public_key().to_hex() ==
         '02466d7fcae563e5cb09a0d1870bb580344804617879a14949cf22285f1bae3f27')
@@ -94,11 +100,24 @@ def test_handshake():
     assert (initiator.chaining_key.hex() ==
         '919219dbb2920afa8db80f9a51787a840bcf111ed8d588caf9ab4be716e42b01')
 
+def test_handshake():
+    classes = [(PublicKey, PrivateKey)]
+    for pubclass, privclass in classes:
+        do_handshake(pubclass, privclass)
 
-def test_read_key_rotation():
-    ls_priv = PrivateKey.from_hex(
+
+###############################################################################
+
+
+def do_read_key_rotation(pubclass, privclass):
+    Bolt8Initiator.PUBLIC_KEY_CLASS = pubclass
+    Bolt8Initiator.PRIVATE_KEY_CLASS = privclass
+    Bolt8Responder.PUBLIC_KEY_CLASS = pubclass
+    Bolt8Responder.PRIVATE_KEY_CLASS = privclass
+
+    ls_priv = privclass.from_hex(
         '1111111111111111111111111111111111111111111111111111111111111111')
-    rs_priv = PrivateKey.from_hex(
+    rs_priv = privclass.from_hex(
         '2121212121212121212121212121212121212121212121212121212121212121')
     rs_pub = rs_priv.public_key()
 
@@ -157,3 +176,8 @@ def test_read_key_rotation():
     assert (noise_msg.hex() ==
         '2ecd8c8a5629d0d02ab457a0fdd0f7b90a192cd46be5ecb6ca570bfc5e268338b1a16'
         'cf4ef2d36')
+
+def test_read_key_rotation():
+    classes = [(PublicKey, PrivateKey)]
+    for pubclass, privclass in classes:
+        do_read_key_rotation(pubclass, privclass)
