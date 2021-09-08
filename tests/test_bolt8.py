@@ -17,22 +17,6 @@ import coincurve
 # crypto utlities
 #############################################################################
 
-class Secret(object):
-    def __init__(self, data: bytes) -> None:
-        assert(len(data) == 32)
-        self.data = data
-
-    def to_bytes(self) -> bytes:
-        return self.data
-
-    def __eq__(self, other: object) -> bool:
-        return isinstance(other, Secret) and self.data == other.data
-
-    def __str__(self):
-        return "Secret[0x{}]".format(self.data.hex())
-
-#############################################################################
-
 class Sha256Mixer(object):
     def __init__(self, base):
         self.hash = sha256(base).digest()
@@ -108,8 +92,7 @@ class PrivateKey(object):
     def ecdh(self, pubkey):
         k = coincurve.PrivateKey(secret=self.to_bytes())
         rk = coincurve.PublicKey(data=pubkey.to_bytes())
-        a = k.ecdh(rk.public_key)
-        return Secret(a)
+        return k.ecdh(rk.public_key)
 
     @staticmethod
     def new_ephemeral():
@@ -226,7 +209,7 @@ class Bolt8Initiator(Bolt8Handshake):
         h.hash = self.handshake['h']
         h.update(self.handshake['e'].public_key().to_bytes())
         es = self.handshake['e'].ecdh(self.responder_pubkey)
-        t = hkdf(salt=self.chaining_key, ikm=es.data, info=b'')
+        t = hkdf(salt=self.chaining_key, ikm=es, info=b'')
         assert(len(t) == 64)
         self.chaining_key, temp_k1 = t[:32], t[32:]
         c = encryptWithAD(temp_k1, nonce(0), h.digest(), b'')
@@ -246,7 +229,7 @@ class Bolt8Initiator(Bolt8Handshake):
         h.update(re.to_bytes())
         ee = self.handshake['e'].ecdh(re)
         self.chaining_key, self.temp_k2 = hkdf_two_keys(
-            salt=self.chaining_key, ikm=ee.data)
+            salt=self.chaining_key, ikm=ee)
         try:
             decryptWithAD(self.temp_k2, nonce(0), h.digest(), c)
         except InvalidTag:
@@ -262,7 +245,7 @@ class Bolt8Initiator(Bolt8Handshake):
         h.update(c)
         se = self.local_privkey.ecdh(self.re)
         self.chaining_key, self.temp_k3 = hkdf_two_keys(
-            salt=self.chaining_key, ikm=se.data)
+            salt=self.chaining_key, ikm=se)
         t = encryptWithAD(self.temp_k3, nonce(0), h.digest(), b'')
         m = b'\x00' + c + t
         self.sk, self.rk = hkdf_two_keys(salt=self.chaining_key, ikm=b'')
@@ -287,7 +270,7 @@ class Bolt8Responder(Bolt8Handshake):
         h.update(re.to_bytes())
         es = self.local_privkey.ecdh(re)
         self.handshake['re'] = re
-        t = hkdf(salt=self.chaining_key, ikm=es.data, info=b'')
+        t = hkdf(salt=self.chaining_key, ikm=es, info=b'')
         self.chaining_key, temp_k1 = t[:32], t[32:]
         try:
             decryptWithAD(temp_k1, nonce(0), h.digest(), c)
@@ -302,7 +285,7 @@ class Bolt8Responder(Bolt8Handshake):
         h.hash = self.handshake['h']
         h.update(self.handshake['e'].public_key().to_bytes())
         ee = self.handshake['e'].ecdh(self.handshake['re'])
-        t = hkdf(salt=self.chaining_key, ikm=ee.data, info=b'')
+        t = hkdf(salt=self.chaining_key, ikm=ee, info=b'')
         assert(len(t) == 64)
         self.chaining_key, self.temp_k2 = t[:32], t[32:]
         c = encryptWithAD(self.temp_k2, nonce(0), h.digest(), b'')
@@ -323,8 +306,7 @@ class Bolt8Responder(Bolt8Handshake):
         self.remote_pubkey = PublicKey(rs)
         h.update(c)
         se = self.handshake['e'].ecdh(self.remote_pubkey)
-        self.chaining_key, self.temp_k3 = hkdf_two_keys(se.data,
-                                                        self.chaining_key)
+        self.chaining_key, self.temp_k3 = hkdf_two_keys(se, self.chaining_key)
         decryptWithAD(self.temp_k3, nonce(0), h.digest(), t)
         self.rk, self.sk = hkdf_two_keys(salt=self.chaining_key, ikm=b'')
         self.finish_handshake()
