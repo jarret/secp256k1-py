@@ -18,9 +18,7 @@ class PrivateKey(object):
         return PublicKey(self.key.pubkey.serialize())
 
     def ecdh(self, pubkey):
-        k = secp256k1.PrivateKey(privkey=self.to_bytes(), raw=True)
-        rk = secp256k1.PublicKey(pubkey=pubkey.to_bytes(), raw=True)
-        return k.ecdh(rk.public_key.to_bytes(compressed=False))
+        return pubkey.key.ecdh(self.rawkey)
 
     @staticmethod
     def new_ephemeral():
